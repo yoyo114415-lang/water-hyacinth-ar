@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>水生植物 3D Web-AR 互動學習平台 ｜ 第 3 組</title>
 
-  <!-- Google 官方 model-viewer (支援 WebXR, Scene Viewer, Quick Look 原生 AR) -->
-  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
-  <!-- jsQR 快速相機 AR Code 解析 -->
+  <!-- Three.js 3D 渲染庫 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- OrbitControls 支援手機單指旋轉與雙指縮放 -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- jsQR 相機 AR Code 即時辨識 -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
   <style>
@@ -40,16 +42,28 @@
       z-index: 1;
     }
 
+    /* 2. 3D WebGL Canvas 疊加層 (透明覆蓋於相機上方) */
+    #webgl-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 3;
+      display: none;
+      pointer-events: auto;
+    }
+
     #scanner-canvas {
       display: none;
     }
 
-    /* 2. 頂部小組資訊卡片 (半透明懸浮) */
+    /* 3. 頂部小組資訊卡片 (半透明懸浮) */
     .top-header {
       position: absolute;
-      top: 12px;
-      left: 12px;
-      right: 12px;
+      top: 10px;
+      left: 10px;
+      right: 10px;
       z-index: 10;
       background: rgba(15, 23, 42, 0.88);
       backdrop-filter: blur(14px);
@@ -65,19 +79,19 @@
       flex-wrap: wrap;
       align-items: center;
       gap: 6px;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
 
     .group-pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      background: rgba(20, 184, 166, 0.2);
-      border: 1px solid rgba(45, 212, 191, 0.4);
+      gap: 5px;
+      background: rgba(20, 184, 166, 0.22);
+      border: 1px solid rgba(45, 212, 191, 0.45);
       color: #2dd4bf;
       font-size: 11px;
       font-weight: 700;
-      padding: 2px 10px;
+      padding: 2px 9px;
       border-radius: 20px;
     }
 
@@ -89,7 +103,7 @@
       color: #7dd3fc;
       font-size: 11px;
       font-weight: 700;
-      padding: 2px 10px;
+      padding: 2px 9px;
       border-radius: 20px;
     }
 
@@ -108,7 +122,7 @@
       margin-top: 2px;
     }
 
-    /* 3. AR 掃描靶標覆蓋層 (未辨識時顯示) */
+    /* 4. AR 掃描靶標覆蓋層 (未辨識時顯示) */
     #scan-overlay {
       position: absolute;
       inset: 0;
@@ -173,7 +187,7 @@
     }
 
     .scan-hint {
-      margin-top: 22px;
+      margin-top: 20px;
       background: rgba(15, 23, 42, 0.92);
       backdrop-filter: blur(8px);
       border: 1px solid rgba(45, 212, 191, 0.4);
@@ -183,31 +197,13 @@
       padding: 8px 18px;
       border-radius: 20px;
       text-align: center;
-      max-width: 82%;
-    }
-
-    /* 4. 3D Web-AR 模型呈現層 (透明疊加於相機上方) */
-    #ar-model-container {
-      position: absolute;
-      inset: 0;
-      z-index: 4;
-      display: none;
-      pointer-events: auto;
-      background: transparent;
-    }
-
-    model-viewer {
-      width: 100%;
-      height: 100%;
-      --poster-color: transparent;
-      background-color: transparent;
-      outline: none;
+      max-width: 84%;
     }
 
     /* 5. 辨識成功通知 */
     .success-toast {
       position: absolute;
-      top: 92px;
+      top: 90px;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(16, 185, 129, 0.94);
@@ -215,7 +211,7 @@
       color: #ffffff;
       font-size: 13px;
       font-weight: 700;
-      padding: 8px 18px;
+      padding: 7px 16px;
       border-radius: 24px;
       box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
       z-index: 20;
@@ -234,8 +230,8 @@
     .hotspots-bar {
       position: absolute;
       top: 92px;
-      left: 12px;
-      right: 12px;
+      left: 10px;
+      right: 10px;
       display: none;
       gap: 6px;
       overflow-x: auto;
@@ -249,7 +245,7 @@
       color: #e2e8f0;
       font-size: 11px;
       font-weight: 700;
-      padding: 6px 12px;
+      padding: 5px 11px;
       border-radius: 20px;
       cursor: pointer;
       white-space: nowrap;
@@ -262,17 +258,91 @@
       color: #ffffff;
     }
 
-    /* 7. 構造解說彈窗卡片 */
+    /* 7. 水位調節控制面板 (學生操作核心) */
+    .water-control-panel {
+      position: absolute;
+      bottom: 74px;
+      left: 12px;
+      right: 12px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 16px;
+      padding: 10px 14px;
+      z-index: 12;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+      animation: slideUp 0.3s ease;
+    }
+
+    .water-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+
+    .water-level-val {
+      background: rgba(56, 189, 248, 0.2);
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      color: #7dd3fc;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+    }
+
+    .water-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .water-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 6px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #0284c7, #38bdf8, #2dd4bf);
+      outline: none;
+    }
+
+    .water-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 3px solid #0284c7;
+      box-shadow: 0 0 8px rgba(2, 132, 199, 0.8);
+      cursor: pointer;
+    }
+
+    .water-edu-tip {
+      font-size: 10.5px;
+      color: #cbd5e1;
+      line-height: 1.4;
+      background: rgba(2, 132, 199, 0.15);
+      padding: 4px 8px;
+      border-radius: 6px;
+      border-left: 3px solid #38bdf8;
+    }
+
+    /* 8. 構造解說彈窗卡片 */
     .feature-sheet {
       position: absolute;
-      bottom: 80px;
-      left: 14px;
-      right: 14px;
-      background: rgba(15, 23, 42, 0.95);
+      bottom: 165px;
+      left: 12px;
+      right: 12px;
+      background: rgba(15, 23, 42, 0.96);
       backdrop-filter: blur(14px);
       border: 1px solid rgba(45, 212, 191, 0.4);
       border-radius: 16px;
-      padding: 12px 16px;
+      padding: 12px 14px;
       z-index: 15;
       display: none;
       animation: slideUp 0.25s ease;
@@ -294,15 +364,15 @@
     }
 
     .feature-sheet-desc {
-      font-size: 12px;
+      font-size: 11.5px;
       color: #e2e8f0;
       line-height: 1.5;
     }
 
-    /* 8. 底部控制按鈕列 */
+    /* 9. 底部控制按鈕列 */
     .bottom-controls {
       position: absolute;
-      bottom: 20px;
+      bottom: 16px;
       left: 0;
       right: 0;
       display: flex;
@@ -318,9 +388,9 @@
       border: 1px solid rgba(45, 212, 191, 0.5);
       color: #ffffff;
       font-family: inherit;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
-      padding: 12px 22px;
+      padding: 11px 20px;
       border-radius: 30px;
       cursor: pointer;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -337,7 +407,7 @@
       font-family: inherit;
       font-size: 12px;
       font-weight: 600;
-      padding: 11px 16px;
+      padding: 10px 16px;
       border-radius: 30px;
       cursor: pointer;
       display: flex;
@@ -352,20 +422,23 @@
   <video id="camera-video" playsinline muted></video>
   <canvas id="scanner-canvas"></canvas>
 
-  <!-- 2. 頂部小組資訊卡片 -->
+  <!-- 2. Three.js 3D 渲染 Canvas (透明疊加於相機上方) -->
+  <canvas id="webgl-canvas"></canvas>
+
+  <!-- 3. 頂部小組資訊卡片 -->
   <header class="top-header">
     <div class="header-badges">
       <div class="group-pill">👥 第 3 組 ｜ 綠境探索隊</div>
       <div class="members-pill">🎓 組員：謝佳緯、張祐仁、榮舫</div>
     </div>
     <div class="app-title">
-      <span>布袋蓮 3D Web-AR 互動平台</span>
-      <span style="font-size: 12px; color: #2dd4bf; font-weight: normal;">漂浮性水生植物</span>
+      <span>布袋蓮水箱浮力探索平台</span>
+      <span style="font-size: 11.5px; color: #2dd4bf; font-weight: normal;">漂浮性水生植物</span>
     </div>
-    <div class="app-subtitle">相機對準 AR Code 即可在鏡頭實景中浮現 3D 模型</div>
+    <div class="app-subtitle">鏡頭對準 AR Code 浮現教學水箱，可拖動滑桿觀察水位浮動</div>
   </header>
 
-  <!-- 3. AR 掃描靶標覆蓋層 -->
+  <!-- 4. AR 掃描靶標覆蓋層 -->
   <div id="scan-overlay">
     <div class="scan-box">
       <div class="scan-beam"></div>
@@ -375,13 +448,13 @@
     </div>
   </div>
 
-  <!-- 4. 辨識成功通知 -->
+  <!-- 5. 辨識成功通知 -->
   <div class="success-toast" id="success-toast">
     <span>✨</span>
-    <span>AR Code 辨識成功！3D 模型浮現於鏡頭中</span>
+    <span>AR Code 辨識成功！教學水箱已投影至鏡頭中</span>
   </div>
 
-  <!-- 5. 3D 特徵熱點列 -->
+  <!-- 6. 3D 特徵熱點列 (辨識後顯示) -->
   <div class="hotspots-bar" id="hotspots-bar">
     <button class="hotspot-tag" onclick="selectFeature(0)">🌱 膨大葉柄(氣室)</button>
     <button class="hotspot-tag" onclick="selectFeature(1)">🌸 鳳眼藍花被</button>
@@ -389,27 +462,23 @@
     <button class="hotspot-tag" onclick="selectFeature(3)">🍃 卵圓翠綠葉片</button>
   </div>
 
-  <!-- 6. 3D Web-AR 模型呈現層 (直接載入同目錄下之 GLB 檔案) -->
-  <div id="ar-model-container">
-    <model-viewer
-      id="hyacinth-viewer"
-      src="./water_hyacinth.glb?v=2"
-      alt="布袋蓮 3D 水生植物模型"
-      auto-rotate
-      rotation-per-second="20deg"
-      camera-controls
-      shadow-intensity="1.5"
-      shadow-softness="0.8"
-      exposure="1.1"
-      ar
-      ar-modes="webxr scene-viewer quick-look"
-      camera-orbit="30deg 75deg 1.2m"
-      field-of-view="32deg"
-    >
-    </model-viewer>
+  <!-- 7. 水位調節控制面板 (學生操作核心) -->
+  <div class="water-control-panel" id="water-control-panel">
+    <div class="water-panel-header">
+      <span>💧 水箱水位調節 (Water Level)</span>
+      <span class="water-level-val" id="water-level-display">水位：55 cm (標準水深)</span>
+    </div>
+    <div class="water-slider-row">
+      <span style="font-size: 11px; color: #94a3b8;">低水位 20cm</span>
+      <input type="range" class="water-slider" id="water-slider" min="20" max="85" value="55" step="1" oninput="onWaterLevelChange(this.value)">
+      <span style="font-size: 11px; color: #94a3b8;">高水位 85cm</span>
+    </div>
+    <div class="water-edu-tip" id="water-edu-tip">
+      💡 <b>科學觀察</b>：拖動上方滑桿調整水位，觀察布袋蓮如何憑藉葉柄膨大氣室，隨水面起伏而始終浮於水表！
+    </div>
   </div>
 
-  <!-- 7. 構造解說彈窗卡片 -->
+  <!-- 8. 構造解說彈窗卡片 -->
   <div class="feature-sheet" id="feature-sheet">
     <div class="feature-sheet-title">
       <span id="feat-title">構造名稱</span>
@@ -418,7 +487,7 @@
     <div class="feature-sheet-desc" id="feat-desc">構造說明</div>
   </div>
 
-  <!-- 8. 底部控制按鈕列 -->
+  <!-- 9. 底部控制按鈕列 -->
   <footer class="bottom-controls">
     <button class="btn-main" id="btn-camera" onclick="startCamera()">
       <span>📷 開啟相機掃描</span>
@@ -432,13 +501,16 @@
   </footer>
 
   <script>
+    // ==========================================
+    // 狀態與場景變數
+    // ==========================================
     const video = document.getElementById('camera-video');
     const scanCanvas = document.getElementById('scanner-canvas');
     const scanCtx = scanCanvas.getContext('2d');
     const scanOverlay = document.getElementById('scan-overlay');
-    const arContainer = document.getElementById('ar-model-container');
-    const viewer = document.getElementById('hyacinth-viewer');
+    const webglCanvas = document.getElementById('webgl-canvas');
     const hotspotsBar = document.getElementById('hotspots-bar');
+    const waterPanel = document.getElementById('water-control-panel');
     const successToast = document.getElementById('success-toast');
     const btnCamera = document.getElementById('btn-camera');
     const btnReset = document.getElementById('btn-reset');
@@ -446,8 +518,308 @@
 
     let isScanning = false;
     let cameraStream = null;
+    let scene, camera, renderer, controls;
 
-    // 啟動相機
+    // 水箱與植物核心 3D 物件
+    let tankGroup, waterMesh, plantGroup;
+    const TANK_WIDTH = 1.05;
+    const TANK_HEIGHT = 1.25;
+    const TANK_DEPTH = 0.75;
+    const TANK_BOTTOM_Y = -0.55; // 水箱底部 Y 座標
+
+    // ==========================================
+    // 1. Three.js 場景初始化 (尺寸調校與視角最佳化)
+    // ==========================================
+    function initThreeScene() {
+      scene = new THREE.Scene();
+
+      // 視角適度拉遠，讓整個水箱完整舒服地呈現在畫面中
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(0, 0.45, 2.75);
+
+      renderer = new THREE.WebGLRenderer({
+        canvas: webglCanvas,
+        alpha: true, // 透明背景透視相機畫面
+        antialias: true
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      // 燈光系統
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.25);
+      dirLight.position.set(3, 7, 5);
+      scene.add(dirLight);
+
+      const blueLight = new THREE.DirectionalLight(0x38bdf8, 0.6);
+      blueLight.position.set(-3, -2, -3);
+      scene.add(blueLight);
+
+      // 控制器 (單指旋轉、雙指縮放)
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 1.5;
+      controls.target.set(0, 0.05, 0);
+      controls.maxPolarAngle = Math.PI / 1.75;
+
+      // 建立教學玻璃水箱
+      buildAquariumTank();
+
+      // 建立動態水體
+      buildDynamicWater();
+
+      // 建立適度微縮之布袋蓮模型
+      buildWaterHyacinthPlant();
+
+      // 設定初始水位 (55cm)
+      onWaterLevelChange(55);
+
+      window.addEventListener('resize', onWindowResize);
+      animate();
+    }
+
+    function onWindowResize() {
+      if (!camera || !renderer) return;
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (controls) controls.update();
+      if (renderer && scene && camera) renderer.render(scene, camera);
+    }
+
+    // ==========================================
+    // 2. 建立精緻教學玻璃水箱 (Aquarium Tank)
+    // ==========================================
+    function buildAquariumTank() {
+      tankGroup = new THREE.Group();
+
+      // 玻璃外壁材質
+      const matGlass = new THREE.MeshPhysicalMaterial({
+        color: 0xe0f2fe,
+        transparent: true,
+        opacity: 0.22,
+        roughness: 0.05,
+        transmission: 0.9,
+        ior: 1.45,
+        side: THREE.DoubleSide
+      });
+
+      // 5 面玻璃板 (底面、左、右、前、後；頂部開口)
+      const halfW = TANK_WIDTH / 2;
+      const halfH = TANK_HEIGHT / 2;
+      const halfD = TANK_DEPTH / 2;
+      const centerY = TANK_BOTTOM_Y + halfH;
+
+      // 底座板
+      const bottomGeo = new THREE.BoxGeometry(TANK_WIDTH, 0.02, TANK_DEPTH);
+      const bottomMesh = new THREE.Mesh(bottomGeo, matGlass);
+      bottomMesh.position.set(0, TANK_BOTTOM_Y, 0);
+      tankGroup.add(bottomMesh);
+
+      // 前後側板
+      const frontBackGeo = new THREE.BoxGeometry(TANK_WIDTH, TANK_HEIGHT, 0.015);
+      const frontMesh = new THREE.Mesh(frontBackGeo, matGlass);
+      frontMesh.position.set(0, centerY, halfD);
+      tankGroup.add(frontMesh);
+
+      const backMesh = new THREE.Mesh(frontBackGeo, matGlass);
+      backMesh.position.set(0, centerY, -halfD);
+      tankGroup.add(backMesh);
+
+      // 左右側板
+      const leftRightGeo = new THREE.BoxGeometry(0.015, TANK_HEIGHT, TANK_DEPTH);
+      const leftMesh = new THREE.Mesh(leftRightGeo, matGlass);
+      leftMesh.position.set(-halfW, centerY, 0);
+      tankGroup.add(leftMesh);
+
+      const rightMesh = new THREE.Mesh(leftRightGeo, matGlass);
+      rightMesh.position.set(halfW, centerY, 0);
+      tankGroup.add(rightMesh);
+
+      // 黑色科技加固邊框線條
+      const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(TANK_WIDTH, TANK_HEIGHT, TANK_DEPTH));
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 });
+      const edgeWire = new THREE.LineSegments(edgeGeo, edgeMat);
+      edgeWire.position.set(0, centerY, 0);
+      tankGroup.add(edgeWire);
+
+      // 水位刻度線標記 (Tick Marks)
+      for (let mark = 1; mark <= 4; mark++) {
+        const markY = TANK_BOTTOM_Y + mark * (TANK_HEIGHT * 0.2);
+        const tickGeo = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(halfW - 0.01, markY, halfD + 0.005),
+          new THREE.Vector3(halfW - 0.08, markY, halfD + 0.005)
+        ]);
+        const tickLine = new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0x7dd3fc }));
+        tankGroup.add(tickLine);
+      }
+
+      scene.add(tankGroup);
+    }
+
+    // ==========================================
+    // 3. 建立動態水體 (Dynamic Water Volume)
+    // ==========================================
+    function buildDynamicWater() {
+      // 藍色半透明水體材質
+      const matWater = new THREE.MeshStandardMaterial({
+        color: 0x0284c7,
+        transparent: true,
+        opacity: 0.45,
+        roughness: 0.1,
+        metalness: 0.05,
+        side: THREE.DoubleSide
+      });
+
+      // 初始化基準水體 (寬、深吻合水箱內壁)
+      const waterGeo = new THREE.BoxGeometry(TANK_WIDTH - 0.04, 1.0, TANK_DEPTH - 0.04);
+      waterMesh = new THREE.Mesh(waterGeo, matWater);
+      scene.add(waterMesh);
+    }
+
+    // ==========================================
+    // 4. 建立適度微縮之真實色彩布袋蓮模型
+    // ==========================================
+    function buildWaterHyacinthPlant() {
+      plantGroup = new THREE.Group();
+
+      // 真實植物 PBR 材質配置
+      const matLeaf = new THREE.MeshStandardMaterial({
+        color: 0x147a24,
+        roughness: 0.25,
+        metalness: 0.05,
+        side: THREE.DoubleSide
+      });
+
+      const matBulb = new THREE.MeshStandardMaterial({
+        color: 0x62b828,
+        roughness: 0.42,
+        metalness: 0.02
+      });
+
+      const matFlower = new THREE.MeshStandardMaterial({
+        color: 0xc4b5fd,
+        roughness: 0.35
+      });
+
+      const matEye = new THREE.MeshStandardMaterial({
+        color: 0xfacc15,
+        roughness: 0.25,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.25
+      });
+
+      const matRoot = new THREE.MeshStandardMaterial({
+        color: 0x180e22,
+        roughness: 0.75
+      });
+
+      // 7 片放射狀葉片與膨大氣室葉柄
+      for (let i = 0; i < 7; i++) {
+        const leafStemGroup = new THREE.Group();
+        const angle = (i / 7) * Math.PI * 2;
+        const tilt = 0.42 + (i % 2) * 0.12;
+
+        // 膨大海綿葉柄 (氣室組織)
+        const bulbGeo = new THREE.SphereGeometry(0.16, 20, 16);
+        bulbGeo.scale(0.8, 1.7, 0.8);
+        const bulbMesh = new THREE.Mesh(bulbGeo, matBulb);
+        bulbMesh.position.y = 0.18;
+        leafStemGroup.add(bulbMesh);
+
+        // 卵圓翠綠葉片
+        const bladeGeo = new THREE.CylinderGeometry(0.22, 0.04, 0.015, 24);
+        bladeGeo.scale(1.0, 1.0, 1.3);
+        const bladeMesh = new THREE.Mesh(bladeGeo, matLeaf);
+        bladeMesh.position.set(0, 0.44, 0.05);
+        bladeMesh.rotation.x = 0.35;
+        leafStemGroup.add(bladeMesh);
+
+        const rad = 0.14;
+        leafStemGroup.position.set(rad * Math.cos(angle), 0.04, rad * Math.sin(angle));
+        leafStemGroup.rotation.y = -angle;
+        leafStemGroup.rotation.z = tilt;
+        plantGroup.add(leafStemGroup);
+      }
+
+      // 中央挺立花莖與鳳眼藍花朵
+      const stemGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.55, 16);
+      const stemMesh = new THREE.Mesh(stemGeo, matBulb);
+      stemMesh.position.y = 0.28;
+      plantGroup.add(stemMesh);
+
+      const flowerGroup = new THREE.Group();
+      flowerGroup.position.y = 0.56;
+      for (let p = 0; p < 6; p++) {
+        const pAngle = (p / 6) * Math.PI * 2;
+        const petalGeo = new THREE.SphereGeometry(0.08, 14, 10);
+        petalGeo.scale(0.6, 1.35, 0.12);
+
+        const isPeacockEye = (p === 3);
+        const petalMesh = new THREE.Mesh(petalGeo, isPeacockEye ? matEye : matFlower);
+        petalMesh.position.set(0.07 * Math.cos(pAngle), 0.035, 0.07 * Math.sin(pAngle));
+        petalMesh.rotation.z = -0.5 * Math.cos(pAngle);
+        petalMesh.rotation.x = 0.5 * Math.sin(pAngle);
+        flowerGroup.add(petalMesh);
+      }
+      plantGroup.add(flowerGroup);
+
+      // 水下懸浮紫黑羽狀鬚根 (維持漂浮重心平衡)
+      for (let r = 0; r < 20; r++) {
+        const rAngle = (r / 20) * Math.PI * 2;
+        const depth = 0.45 + (r % 4) * 0.07;
+        const rootGeo = new THREE.CylinderGeometry(0.006, 0.003, depth, 8);
+        const rootMesh = new THREE.Mesh(rootGeo, matRoot);
+        rootMesh.position.set(0.05 * Math.cos(rAngle), -depth / 2, 0.05 * Math.sin(rAngle));
+        rootMesh.rotation.z = 0.08 * Math.cos(rAngle);
+        plantGroup.add(rootMesh);
+      }
+
+      // 縮小整體尺寸：縮小至約 0.52 倍，精緻適中不頂格
+      plantGroup.scale.set(0.52, 0.52, 0.52);
+      scene.add(plantGroup);
+    }
+
+    // ==========================================
+    // 5. 學生調整水位核心邏輯 (Water Level Control)
+    // ==========================================
+    function onWaterLevelChange(val) {
+      const percent = parseFloat(val) / 100.0; // 0.20 ~ 0.85
+      const currentHeight = (TANK_HEIGHT * 0.95) * percent; // 水柱高度
+
+      // 1. 動態更新水體網格大小與位置
+      if (waterMesh) {
+        waterMesh.scale.y = currentHeight;
+        waterMesh.position.y = TANK_BOTTOM_Y + (currentHeight / 2);
+      }
+
+      // 2. 布袋蓮浮動位置：永遠錨定在水面表層！
+      const waterSurfaceY = TANK_BOTTOM_Y + currentHeight;
+      if (plantGroup) {
+        plantGroup.position.y = waterSurfaceY;
+      }
+
+      // 3. 更新介面數值顯示
+      const displayElem = document.getElementById('water-level-display');
+      if (displayElem) {
+        let statusText = "標準水深";
+        if (val < 35) statusText = "低水位 (鬚根接近底層)";
+        else if (val > 70) statusText = "高水位 (膨大氣室托高)";
+        displayElem.innerText = `水位：${val} cm (${statusText})`;
+      }
+    }
+
+    // ==========================================
+    // 6. 相機控制與 AR Code 辨識循環
+    // ==========================================
     async function startCamera() {
       try {
         const constraints = {
@@ -462,12 +834,11 @@
         document.getElementById('scan-hint-text').innerText = '🔍 正在掃描... 請對準【AR Code 圖檔】';
         requestAnimationFrame(scanLoop);
       } catch (err) {
-        console.warn("無法開啟相機:", err);
-        alert("無法啟動相機，請確認瀏覽器已允許相機存取，或點擊「⚡ 模擬辨識」！");
+        console.warn("相機啟動錯誤:", err);
+        alert("無法啟動相機。請確認瀏覽器已允許相機存取，或點擊「⚡ 模擬辨識」直接操作水箱！");
       }
     }
 
-    // 相機解析循環
     function scanLoop() {
       if (!isScanning) return;
 
@@ -489,7 +860,7 @@
       requestAnimationFrame(scanLoop);
     }
 
-    // 辨識成功：相機實景保持運作，3D 模型直接在鏡頭畫面上浮現！
+    // 辨識成功：相機實景保持運作，教學水箱與布袋蓮浮現於鏡頭中！
     function onTargetDetected(codeText) {
       isScanning = false;
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -500,10 +871,14 @@
       scanOverlay.style.opacity = '0';
       setTimeout(() => {
         scanOverlay.style.display = 'none';
-        arContainer.style.display = 'block';
+        webglCanvas.style.display = 'block';
         hotspotsBar.style.display = 'flex';
+        waterPanel.style.display = 'flex';
         btnReset.style.display = 'flex';
         btnSimulate.style.display = 'none';
+
+        if (!scene) initThreeScene();
+        controls.autoRotate = true;
       }, 300);
     }
 
@@ -512,8 +887,9 @@
     }
 
     function resetToScan() {
-      arContainer.style.display = 'none';
+      webglCanvas.style.display = 'none';
       hotspotsBar.style.display = 'none';
+      waterPanel.style.display = 'none';
       closeFeatureSheet();
       scanOverlay.style.display = 'flex';
       scanOverlay.style.opacity = '1';
@@ -529,27 +905,29 @@
       }
     }
 
-    // 生物適應構造解說
+    // ==========================================
+    // 7. 生物適應構造解說
+    // ==========================================
     const FEATURES = [
       {
         title: "🌱 膨大海綿葉柄 (氣室組織)",
-        desc: "葉柄顯著膨大呈紡錘葫蘆狀，內部由發達的海綿狀通氣組織構成，富含大量空氣，提供整株植物漂浮於水面的強大浮力。",
-        orbit: "20deg 75deg 1.0m"
+        desc: "葉柄顯著膨大呈紡錘葫蘆狀，內部由發達的海綿狀通氣組織構成，富含大量空氣。無論水箱水位高低，始終提供整株植物浮於水面的強大浮力！",
+        camPos: [0, 0.45, 1.8]
       },
       {
         title: "🌸 鳳眼藍花被 (誘引授粉)",
         desc: "六枚紫藍色花被片中，最上方一枚中央具有鮮豔的黃色斑點與孔雀藍光暈（鳳眼），能高效吸引蜂蝶等昆蟲前來傳粉。",
-        orbit: "0deg 55deg 0.8m"
+        camPos: [0, 0.7, 1.4]
       },
       {
         title: "🪸 紫黑色懸浮羽狀鬚根 (平衡龍骨)",
-        desc: "懸垂於水中生長，除大量吸收溶於水中的無機鹽養分，更扮演船隻龍骨的角色，能維持植物重心穩定，不易被風浪吹翻。",
-        orbit: "45deg 110deg 1.1m"
+        desc: "懸垂於水箱水中生長，除大量吸收溶於水中的無機鹽養分，更扮演船隻龍骨的角色，能維持植物重心穩定，不易被水波翻側。",
+        camPos: [0, -0.3, 1.8]
       },
       {
         title: "🍃 卵形翠綠葉片 (角質疏水)",
         desc: "葉片圓厚光滑，表面具緻密蠟質角質層，雨水與水滴不黏滯浸潤，耐強光曝曬並保護氣孔維持高效呼吸與光合作用。",
-        orbit: "60deg 60deg 1.2m"
+        camPos: [0.6, 0.5, 1.6]
       }
     ];
 
@@ -563,12 +941,22 @@
       document.getElementById('feat-title').innerText = f.title;
       document.getElementById('feat-desc').innerText = f.desc;
       document.getElementById('feature-sheet').style.display = 'block';
-      viewer.cameraOrbit = f.orbit;
+
+      if (controls && camera) {
+        controls.autoRotate = false;
+        camera.position.set(f.camPos[0], f.camPos[1], f.camPos[2]);
+        controls.target.set(0, 0.05, 0);
+      }
     }
 
     function closeFeatureSheet() {
       document.getElementById('feature-sheet').style.display = 'none';
+      if (controls) controls.autoRotate = true;
     }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initThreeScene();
+    });
   </script>
 </body>
 </html>
