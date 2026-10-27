@@ -60,6 +60,14 @@
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
 
+    .header-badges {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
     .group-pill {
       display: inline-flex;
       align-items: center;
@@ -71,7 +79,18 @@
       font-weight: 700;
       padding: 2px 10px;
       border-radius: 20px;
-      margin-bottom: 4px;
+    }
+
+    .members-pill {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(56, 189, 248, 0.2);
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      color: #7dd3fc;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 20px;
     }
 
     .app-title {
@@ -335,7 +354,10 @@
 
   <!-- 2. 頂部小組資訊卡片 -->
   <header class="top-header">
-    <div class="group-pill">👥 第 3 組 ｜ 綠境探索隊</div>
+    <div class="header-badges">
+      <div class="group-pill">👥 第 3 組 ｜ 綠境探索隊</div>
+      <div class="members-pill">🎓 組員：謝佳緯、張祐仁、榮舫</div>
+    </div>
     <div class="app-title">
       <span>布袋蓮 3D Web-AR 互動平台</span>
       <span style="font-size: 12px; color: #2dd4bf; font-weight: normal;">漂浮性水生植物</span>
