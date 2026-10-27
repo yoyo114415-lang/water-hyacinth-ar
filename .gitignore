@@ -1,0 +1,23 @@
+# 環境變數與機敏設定檔
+.env
+.env.*
+*.env
+
+# 金鑰與憑證
+*.pem
+*.key
+*credentials*.json
+*serviceAccountKey*.json
+
+# 暫存與建置產物
+node_modules/
+dist/
+build/
+.cache/
+*.log
+
+# 作業系統與編輯器暫存
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

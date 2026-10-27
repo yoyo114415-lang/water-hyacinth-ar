@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>水生植物 3D Web-AR 互動學習平台 ｜ 第 3 組</title>
+
+  <!-- Google 官方 model-viewer (支援 WebXR, Scene Viewer, Quick Look 原生 AR) -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+  <!-- jsQR 快速相機 AR Code 解析 -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+      background-color: #000000;
+      color: #ffffff;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* 1. 全螢幕相機視訊背景 (AR 實景) */
+    #camera-video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
+    }
+
+    #scanner-canvas {
+      display: none;
+    }
+
+    /* 2. 頂部小組資訊卡片 (半透明懸浮) */
+    .top-header {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(45, 212, 191, 0.4);
+      border-radius: 16px;
+      padding: 10px 14px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .group-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(20, 184, 166, 0.2);
+      border: 1px solid rgba(45, 212, 191, 0.4);
+      color: #2dd4bf;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 20px;
+      margin-bottom: 4px;
+    }
+
+    .app-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .app-subtitle {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    /* 3. AR 掃描靶標覆蓋層 (未辨識時顯示) */
+    #scan-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .scan-box {
+      width: 240px;
+      height: 240px;
+      border: 2px dashed rgba(45, 212, 191, 0.5);
+      border-radius: 20px;
+      position: relative;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.48);
+      animation: pulse-box 2.2s infinite ease-in-out;
+    }
+
+    @keyframes pulse-box {
+      0%, 100% { border-color: rgba(45, 212, 191, 0.4); transform: scale(1); }
+      50% { border-color: rgba(56, 189, 248, 0.9); transform: scale(1.02); }
+    }
+
+    .scan-box::before, .scan-box::after {
+      content: '';
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-color: #2dd4bf;
+      border-style: solid;
+    }
+
+    .scan-box::before {
+      top: -2px; left: -2px;
+      border-width: 4px 0 0 4px;
+      border-top-left-radius: 12px;
+    }
+
+    .scan-box::after {
+      bottom: -2px; right: -2px;
+      border-width: 0 4px 4px 0;
+      border-bottom-right-radius: 12px;
+    }
+
+    .scan-beam {
+      position: absolute;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #2dd4bf, #38bdf8, transparent);
+      box-shadow: 0 0 12px #2dd4bf;
+      animation: scan-beam 2s infinite ease-in-out;
+    }
+
+    @keyframes scan-beam {
+      0% { top: 8%; opacity: 0.2; }
+      50% { top: 92%; opacity: 1; }
+      100% { top: 8%; opacity: 0.2; }
+    }
+
+    .scan-hint {
+      margin-top: 22px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(45, 212, 191, 0.4);
+      color: #e2e8f0;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 18px;
+      border-radius: 20px;
+      text-align: center;
+      max-width: 82%;
+    }
+
+    /* 4. 3D Web-AR 模型呈現層 (透明疊加於相機上方) */
+    #ar-model-container {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      display: none;
+      pointer-events: auto;
+      background: transparent;
+    }
+
+    model-viewer {
+      width: 100%;
+      height: 100%;
+      --poster-color: transparent;
+      background-color: transparent;
+      outline: none;
+    }
+
+    /* 5. 辨識成功通知 */
+    .success-toast {
+      position: absolute;
+      top: 92px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(16, 185, 129, 0.94);
+      backdrop-filter: blur(8px);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 8px 18px;
+      border-radius: 24px;
+      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+      z-index: 20;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translate(-50%, -10px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    /* 6. 3D 特徵熱點列 */
+    .hotspots-bar {
+      position: absolute;
+      top: 92px;
+      left: 12px;
+      right: 12px;
+      display: none;
+      gap: 6px;
+      overflow-x: auto;
+      z-index: 10;
+      padding-bottom: 4px;
+    }
+
+    .hotspot-tag {
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(45, 212, 191, 0.4);
+      color: #e2e8f0;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      white-space: nowrap;
+      backdrop-filter: blur(8px);
+    }
+
+    .hotspot-tag.active {
+      background: #0f766e;
+      border-color: #2dd4bf;
+      color: #ffffff;
+    }
+
+    /* 7. 構造解說彈窗卡片 */
+    .feature-sheet {
+      position: absolute;
+      bottom: 80px;
+      left: 14px;
+      right: 14px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(45, 212, 191, 0.4);
+      border-radius: 16px;
+      padding: 12px 16px;
+      z-index: 15;
+      display: none;
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .feature-sheet-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #2dd4bf;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .feature-sheet-desc {
+      font-size: 12px;
+      color: #e2e8f0;
+      line-height: 1.5;
+    }
+
+    /* 8. 底部控制按鈕列 */
+    .bottom-controls {
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      z-index: 10;
+      padding: 0 16px;
+    }
+
+    .btn-main {
+      background: linear-gradient(135deg, #0d9488, #0f766e);
+      border: 1px solid rgba(45, 212, 191, 0.5);
+      color: #ffffff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 12px 22px;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-sub {
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(6px);
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 11px 16px;
+      border-radius: 30px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. 全螢幕相機視訊串流 (實景 AR) -->
+  <video id="camera-video" playsinline muted></video>
+  <canvas id="scanner-canvas"></canvas>
+
+  <!-- 2. 頂部小組資訊卡片 -->
+  <header class="top-header">
+    <div class="group-pill">👥 第 3 組 ｜ 綠境探索隊</div>
+    <div class="app-title">
+      <span>布袋蓮 3D Web-AR 互動平台</span>
+      <span style="font-size: 12px; color: #2dd4bf; font-weight: normal;">漂浮性水生植物</span>
+    </div>
+    <div class="app-subtitle">相機對準 AR Code 即可在鏡頭實景中浮現 3D 模型</div>
+  </header>
+
+  <!-- 3. AR 掃描靶標覆蓋層 -->
+  <div id="scan-overlay">
+    <div class="scan-box">
+      <div class="scan-beam"></div>
+    </div>
+    <div class="scan-hint" id="scan-hint-text">
+      📷 請點擊下方「開啟相機」對準【AR Code 圖檔】
+    </div>
+  </div>
+
+  <!-- 4. 辨識成功通知 -->
+  <div class="success-toast" id="success-toast">
+    <span>✨</span>
+    <span>AR Code 辨識成功！3D 模型浮現於鏡頭中</span>
+  </div>
+
+  <!-- 5. 3D 特徵熱點列 -->
+  <div class="hotspots-bar" id="hotspots-bar">
+    <button class="hotspot-tag" onclick="selectFeature(0)">🌱 膨大葉柄(氣室)</button>
+    <button class="hotspot-tag" onclick="selectFeature(1)">🌸 鳳眼藍花被</button>
+    <button class="hotspot-tag" onclick="selectFeature(2)">🪸 水下懸浮鬚根</button>
+    <button class="hotspot-tag" onclick="selectFeature(3)">🍃 卵圓翠綠葉片</button>
+  </div>
+
+  <!-- 6. 3D Web-AR 模型呈現層 (直接載入同目錄下之 GLB 檔案) -->
+  <div id="ar-model-container">
+    <model-viewer
+      id="hyacinth-viewer"
+      src="./water_hyacinth.glb"
+      alt="布袋蓮 3D 水生植物模型"
+      auto-rotate
+      rotation-per-second="20deg"
+      camera-controls
+      shadow-intensity="1.2"
+      shadow-softness="0.8"
+      exposure="1.0"
+      ar
+      ar-modes="webxr scene-viewer quick-look"
+      camera-orbit="30deg 75deg 1.2m"
+      field-of-view="32deg"
+    >
+    </model-viewer>
+  </div>
+
+  <!-- 7. 構造解說彈窗卡片 -->
+  <div class="feature-sheet" id="feature-sheet">
+    <div class="feature-sheet-title">
+      <span id="feat-title">構造名稱</span>
+      <span style="cursor: pointer; font-size: 16px;" onclick="closeFeatureSheet()">✕</span>
+    </div>
+    <div class="feature-sheet-desc" id="feat-desc">構造說明</div>
+  </div>
+
+  <!-- 8. 底部控制按鈕列 -->
+  <footer class="bottom-controls">
+    <button class="btn-main" id="btn-camera" onclick="startCamera()">
+      <span>📷 開啟相機掃描</span>
+    </button>
+    <button class="btn-sub" id="btn-reset" onclick="resetToScan()" style="display: none;">
+      <span>🔄 重新掃描</span>
+    </button>
+    <button class="btn-sub" id="btn-simulate" onclick="simulateDetected()">
+      <span>⚡ 模擬辨識</span>
+    </button>
+  </footer>
+
+  <script>
+    const video = document.getElementById('camera-video');
+    const scanCanvas = document.getElementById('scanner-canvas');
+    const scanCtx = scanCanvas.getContext('2d');
+    const scanOverlay = document.getElementById('scan-overlay');
+    const arContainer = document.getElementById('ar-model-container');
+    const viewer = document.getElementById('hyacinth-viewer');
+    const hotspotsBar = document.getElementById('hotspots-bar');
+    const successToast = document.getElementById('success-toast');
+    const btnCamera = document.getElementById('btn-camera');
+    const btnReset = document.getElementById('btn-reset');
+    const btnSimulate = document.getElementById('btn-simulate');
+
+    let isScanning = false;
+    let cameraStream = null;
+
+    // 啟動相機
+    async function startCamera() {
+      try {
+        const constraints = {
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        };
+        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = cameraStream;
+        await video.play();
+
+        isScanning = true;
+        btnCamera.style.display = 'none';
+        document.getElementById('scan-hint-text').innerText = '🔍 正在掃描... 請對準【AR Code 圖檔】';
+        requestAnimationFrame(scanLoop);
+      } catch (err) {
+        console.warn("無法開啟相機:", err);
+        alert("無法啟動相機，請確認瀏覽器已允許相機存取，或點擊「⚡ 模擬辨識」！");
+      }
+    }
+
+    // 相機解析循環
+    function scanLoop() {
+      if (!isScanning) return;
+
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        scanCanvas.width = video.videoWidth;
+        scanCanvas.height = video.videoHeight;
+        scanCtx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+        const imgData = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+        const code = jsQR(imgData.data, imgData.width, imgData.height, {
+          inversionAttempts: "dontInvert"
+        });
+
+        if (code) {
+          console.log("辨識成功:", code.data);
+          onTargetDetected(code.data);
+          return;
+        }
+      }
+      requestAnimationFrame(scanLoop);
+    }
+
+    // 辨識成功：相機實景保持運作，3D 模型直接在鏡頭畫面上浮現！
+    function onTargetDetected(codeText) {
+      isScanning = false;
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+      successToast.style.display = 'flex';
+      setTimeout(() => { successToast.style.display = 'none'; }, 2500);
+
+      scanOverlay.style.opacity = '0';
+      setTimeout(() => {
+        scanOverlay.style.display = 'none';
+        arContainer.style.display = 'block';
+        hotspotsBar.style.display = 'flex';
+        btnReset.style.display = 'flex';
+        btnSimulate.style.display = 'none';
+      }, 300);
+    }
+
+    function simulateDetected() {
+      onTargetDetected("AR_TARGET:WATER_HYACINTH:SIMULATED");
+    }
+
+    function resetToScan() {
+      arContainer.style.display = 'none';
+      hotspotsBar.style.display = 'none';
+      closeFeatureSheet();
+      scanOverlay.style.display = 'flex';
+      scanOverlay.style.opacity = '1';
+      btnReset.style.display = 'none';
+      btnSimulate.style.display = 'flex';
+
+      if (cameraStream) {
+        isScanning = true;
+        document.getElementById('scan-hint-text').innerText = '🔍 正在掃描... 請對準【AR Code 圖檔】';
+        requestAnimationFrame(scanLoop);
+      } else {
+        btnCamera.style.display = 'flex';
+      }
+    }
+
+    // 生物適應構造解說
+    const FEATURES = [
+      {
+        title: "🌱 膨大海綿葉柄 (氣室組織)",
+        desc: "葉柄顯著膨大呈紡錘葫蘆狀，內部由發達的海綿狀通氣組織構成，富含大量空氣，提供整株植物漂浮於水面的強大浮力。",
+        orbit: "20deg 75deg 1.0m"
+      },
+      {
+        title: "🌸 鳳眼藍花被 (誘引授粉)",
+        desc: "六枚紫藍色花被片中，最上方一枚中央具有鮮豔的黃色斑點與孔雀藍光暈（鳳眼），能高效吸引蜂蝶等昆蟲前來傳粉。",
+        orbit: "0deg 55deg 0.8m"
+      },
+      {
+        title: "🪸 紫黑色懸浮羽狀鬚根 (平衡龍骨)",
+        desc: "懸垂於水中生長，除大量吸收溶於水中的無機鹽養分，更扮演船隻龍骨的角色，能維持植物重心穩定，不易被風浪吹翻。",
+        orbit: "45deg 110deg 1.1m"
+      },
+      {
+        title: "🍃 卵形翠綠葉片 (角質疏水)",
+        desc: "葉片圓厚光滑，表面具緻密蠟質角質層，雨水與水滴不黏滯浸潤，耐強光曝曬並保護氣孔維持高效呼吸與光合作用。",
+        orbit: "60deg 60deg 1.2m"
+      }
+    ];
+
+    function selectFeature(idx) {
+      document.querySelectorAll('.hotspot-tag').forEach((el, i) => {
+        if (i === idx) el.classList.add('active');
+        else el.classList.remove('active');
+      });
+
+      const f = FEATURES[idx];
+      document.getElementById('feat-title').innerText = f.title;
+      document.getElementById('feat-desc').innerText = f.desc;
+      document.getElementById('feature-sheet').style.display = 'block';
+      viewer.cameraOrbit = f.orbit;
+    }
+
+    function closeFeatureSheet() {
+      document.getElementById('feature-sheet').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
